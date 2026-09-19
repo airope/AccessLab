@@ -10,7 +10,14 @@ namespace AccessLab.Api.Tests;
 
 public class TestClock : TimeProvider
 {
-    public DateTimeOffset Now { get; set; } = DateTimeOffset.UtcNow;
+    // Fixtures compare persisted boundaries with in-memory commands: start at PostgreSQL precision.
+    public DateTimeOffset Now { get; set; } =
+        new(
+            DateTimeOffset.UtcNow.Ticks
+                / TimeSpan.TicksPerMicrosecond
+                * TimeSpan.TicksPerMicrosecond,
+            TimeSpan.Zero
+        );
 
     public override DateTimeOffset GetUtcNow() => Now;
 }
