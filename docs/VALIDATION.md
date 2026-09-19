@@ -11,9 +11,11 @@ and [RUNBOOK.md](RUNBOOK.md) for local commands and service prerequisites.
 
 `python3 scripts/verify.py --browser` completed successfully against native
 PostgreSQL and real Keycloak, using a freshly built API and an isolated browser-test
-database. The application/test sources in this baseline are retained in the
-initial public edition; publication documentation and CI configuration are
-verified separately.
+database. The application sources in this baseline are retained in the public
+edition. Hosted verification additionally checks the container route and test
+portability: the pagination fixture uses PostgreSQL's microsecond timestamp
+resolution while retaining exact round-trip assertions. Native results below
+are a dated baseline; use the CI run for the current public revision.
 
 | Suite or gate | Observed result |
 |---|---|

@@ -340,6 +340,8 @@ public class CompletionTests
     public async Task Growing_lists_have_bounded_scoped_pages(string path, int total)
     {
         await using var f = new ApiFixture();
+        // PostgreSQL preserves microseconds, not .NET's 100 ns ticks; keep exact round-trip assertions.
+        f.Clock.Now = f.Clock.Now.AddTicks(-(f.Clock.Now.Ticks % TimeSpan.TicksPerMicrosecond));
         var client = f.As(ApiFixture.Claire);
         using (var scope = f.Services.CreateScope())
         {
