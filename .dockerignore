@@ -1,0 +1,14 @@
+.git
+.local
+.env*
+**/node_modules
+**/bin
+**/obj
+**/dist
+src/AccessLab.Api/wwwroot
+**/test-results
+**/playwright-report
+docs
+*.pfx
+*.pem
+*.key

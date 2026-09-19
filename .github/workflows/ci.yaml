@@ -1,0 +1,71 @@
+name: AccessLab verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: accesslab-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.400
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26.5.0
+      - name: Generate ephemeral credentials and certificate
+        run: python3 scripts/setup.py --certificate
+      - name: Test infrastructure and private configuration generator
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - name: Scan for private material
+        run: python3 scripts/check-secrets.py
+      - name: Start real PostgreSQL
+        run: docker compose up -d --wait postgres
+      - name: Restore locked NuGet dependencies
+        run: dotnet restore --locked-mode
+      - name: Backend formatting
+        run: |
+          dotnet tool restore
+          dotnet tool run csharpier check src/AccessLab.Api tests/AccessLab.Api.Tests
+      - name: xUnit and real PostgreSQL integration
+        run: python3 scripts/native.py test --no-restore --configuration Release --logger trx
+      - name: Frontend unit/component tests
+        working-directory: src/AccessLab.Web
+        run: |
+          npm ci
+          npm test
+          npm run format:check
+          npm run build
+          npm audit --audit-level=high
+      - name: Backend dependency audit
+        run: |
+          dotnet list package --vulnerable --include-transitive --format json > .local/dependency-audit.json
+          python3 -c 'import json; d=json.load(open(".local/dependency-audit.json")); bad=[p for project in d.get("projects",[]) for f in project.get("frameworks",[]) for key in ("topLevelPackages","transitivePackages") for p in f.get(key,[]) if p.get("vulnerabilities")]; print("Vulnerable .NET package entries:",len(bad)); raise SystemExit(bool(bad))'
+      - name: Build and start same-origin application and real Keycloak
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Install acceptance browser
+        working-directory: tests/e2e
+        run: |
+          npm ci
+          npx tsc --noEmit
+          node ../../src/AccessLab.Web/node_modules/prettier/bin/prettier.cjs --check specs cleanup.mjs cleanup.d.mts cleanup.test.mjs record-demo.mjs playwright.config.ts package.json
+          npx playwright install --with-deps chromium
+          npm audit --audit-level=high
+      - name: Real OIDC browser acceptance
+        working-directory: tests/e2e
+        env:
+          ACCESSLAB_URL: https://localhost:5443
+          ACCESSLAB_BROWSER: chromium
+          ACCESSLAB_E2E_ISOLATED: '1'
+        run: npm test
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down --volumes
+# No private .local files, Keycloak logs, browser traces, or credentials are uploaded.

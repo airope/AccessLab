@@ -1,0 +1,21 @@
+name: Design proposal
+description: Discuss a focused improvement before implementing it.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: Who needs this, and what cannot be done today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior and boundaries
+      description: Include authorization, operational impact and alternatives where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: How would we verify it?

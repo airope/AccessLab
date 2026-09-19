@@ -1,0 +1,77 @@
+name: accesslab
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_USER: accesslab
+      POSTGRES_DB: accesslab
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:${ACCESSLAB_POSTGRES_PORT:-55432}:5432"
+    secrets: [postgres_password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/10-accesslab.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$$(cat /run/secrets/postgres_password)" psql -h 127.0.0.1 -U accesslab -d accesslab -tAc "SELECT 1" >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    # Local-only: root reads restrictive host-owned bind mounts; not a public deployment profile.
+    user: "0:0"
+    entrypoint: [/bin/bash, /opt/accesslab/start.sh]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: accesslab
+      KC_HOSTNAME: http://localhost:58080
+      KC_HTTP_PORT: "58080"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:58080:58080"
+      - "127.0.0.1:5443:5443"
+    secrets: [postgres_password]
+    volumes:
+      - ./.local/realm:/opt/keycloak/data/import:ro
+      - ./infra/keycloak/start.sh:/opt/accesslab/start.sh:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /bin/bash, -ec, 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; read -r response <&3; [[ "$${response}" == *"200"* ]]']
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 60
+    restart: unless-stopped
+  app:
+    build: .
+    # Shares loopback with Keycloak: browser and BFF see the SAME localhost issuer.
+    network_mode: service:keycloak
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: https://0.0.0.0:5443
+    volumes:
+      - ./.local/appsettings.container.json:/app/appsettings.Development.json:ro
+      - ./.local/certs:/run/private/certs:ro
+      - data-protection:/app/data-protection
+    depends_on:
+      keycloak: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --insecure, https://localhost:5443/health/ready]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+    restart: unless-stopped
+secrets:
+  postgres_password:
+    file: ./.local/postgres-password
+volumes:
+  postgres-data:
+  data-protection:
